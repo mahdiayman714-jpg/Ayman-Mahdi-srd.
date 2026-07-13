@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>مغامرة الفضاء 🚀</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: radial-gradient(ellipse at center, #0f1128 0%, #030308 100%);
+    font-family: 'Tahoma', 'Segoe UI', sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; overflow:hidden; color:#fff;
+  }
+  h1 {
+    font-size:28px; margin-bottom:10px; letter-spacing:1px;
+    background: linear-gradient(90deg,#7dd3fc,#f0abfc,#fde68a);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 30px rgba(125,211,252,.3);
+  }
+  #hud {
+    display:flex; gap:24px; margin-bottom:10px; font-size:16px; font-weight:bold;
+  }
+  #hud span { color:#fde68a; }
+  #gameArea {
+    position:relative;
+    width:420px; height:600px;
+    background:linear-gradient(180deg,#0a0e2a,#020208);
+    border:2px solid #4c1d95;
+    border-radius:14px;
+    box-shadow:0 0 40px rgba(124,58,237,.4), inset 0 0 60px rgba(0,0,0,.6);
+    overflow:hidden;
+    touch-action:none;
+  }
+  canvas { display:block; }
+  #overlay {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(3,3,10,.85);
+    text-align:center; gap:14px; padding:20px;
+  }
+  #overlay h2 { font-size:24px; color:#f0abfc; }
+  #overlay p { font-size:14px; color:#cbd5e1; max-width:320px; line-height:1.8; }
+  button {
+    background:linear-gradient(135deg,#7c3aed,#db2777);
+    color:#fff; border:none; padding:12px 28px; border-radius:30px;
+    font-size:16px; font-weight:bold; cursor:pointer;
+    box-shadow:0 4px 20px rgba(124,58,237,.5);
+    transition:transform .15s;
+  }
+  button:active { transform:scale(0.94); }
+  #controlsHint { margin-top:12px; font-size:12px; color:#64748b; text-align:center; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+
+<h1>🚀 مغامرة الفضاء</h1>
+<div id="hud">
+  <div>النقاط: <span id="scoreVal">0</span></div>
+  <div>❤️ <span id="livesVal">3</span></div>
+  <div>المستوى: <span id="levelVal">1</span></div>
+</div>
+
+<div id="gameArea">
+  <canvas id="canvas" width="420" height="600"></canvas>
+  <div id="overlay">
+    <h2 id="overlayTitle">جاهز للانطلاق؟</h2>
+    <p>حرّك سفينتك الفضائية لتفادي النيازك ☄️ واجمع النجوم الذهبية ⭐ لزيادة نقاطك. كل 100 نقطة يزداد المستوى وتسرع اللعبة!</p>
+    <button id="startBtn">ابدأ اللعب</button>
+    <div id="controlsHint">استخدم ← → أو A/D أو اسحب بإصبعك للتحكم</div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const scoreVal = document.getElementById('scoreVal');
+const livesVal = document.getElementById('livesVal');
+const levelVal = document.getElementById('levelVal');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const startBtn = document.getElementById('startBtn');
+const controlsHint = document.getElementById('controlsHint');
+
+let ship, meteors, stars, particles, score, lives, level, running, spawnTimer, speedMult, keys, animId;
+
+function resetGame() {
+  ship = { x: W/2 - 22, y: H - 70, w: 44, h: 44, vx: 0 };
+  meteors = [];
+  stars = [];
+  particles = [];
+  score = 0;
+  lives = 3;
+  level = 1;
+  spawnTimer = 0;
+  speedMult = 1;
+  keys = {};
+  updateHUD();
+}
+
+function updateHUD() {
+  scoreVal.textContent = score;
+  livesVal.textContent = lives;
+  levelVal.textContent = level;
+}
+
+function spawnEntity() {
+  const isStar = Math.random() < 0.32;
+  const size = isStar ? 22 : (18 + Math.random()*22);
+  const x = Math.random() * (W - size);
+  const speed = (isStar ? 2.4 : 1.8 + Math.random()*2.2) * speedMult;
+  const entity = { x, y: -size, size, speed, rot: 0, rotSpeed: (Math.random()-0.5)*0.1 };
+  if (isStar) stars.push(entity); else meteors.push(entity);
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i=0;i<count;i++){
+    particles.push({
+      x, y,
+      vx:(Math.random()-0.5)*6,
+      vy:(Math.random()-0.5)*6,
+      life:30, color
+    });
+  }
+}
+
+function drawShip() {
+  ctx.save();
+  ctx.translate(ship.x + ship.w/2, ship.y + ship.h/2);
+  ctx.beginPath();
+  ctx.moveTo(0, -22);
+  ctx.lineTo(16, 18);
+  ctx.lineTo(0, 10);
+  ctx.lineTo(-16, 18);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0,-22,0,18);
+  grad.addColorStop(0,'#7dd3fc');
+  grad.addColorStop(1,'#7c3aed');
+  ctx.fillStyle = grad;
+  ctx.shadowColor = '#7dd3fc';
+  ctx.shadowBlur = 15;
+  ctx.fill();
+  // flame
+  ctx.beginPath();
+  ctx.moveTo(-6, 16);
+  ctx.lineTo(0, 16 + 10 + Math.random()*8);
+  ctx.lineTo(6, 16);
+  ctx.closePath();
+  ctx.fillStyle = '#fbbf24';
+  ctx.shadowColor = '#fbbf24';
+  ctx.shadowBlur = 20;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMeteor(m) {
+  ctx.save();
+  ctx.translate(m.x + m.size/2, m.y + m.size/2);
+  ctx.rotate(m.rot);
+  ctx.beginPath();
+  ctx.arc(0,0,m.size/2,0,Math.PI*2);
+  const grad = ctx.createRadialGradient(-m.size/6,-m.size/6,2, 0,0,m.size/2);
+  grad.addColorStop(0,'#a78bfa');
+  grad.addColorStop(1,'#3b0764');
+  ctx.fillStyle = grad;
+  ctx.shadowColor = '#a855f7';
+  ctx.shadowBlur = 10;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawStar(s) {
+  ctx.save();
+  ctx.translate(s.x + s.size/2, s.y + s.size/2);
+  ctx.rotate(s.rot);
+  ctx.beginPath();
+  for (let i=0;i<5;i++){
+    ctx.lineTo(Math.cos((18+i*72)*Math.PI/180)*s.size/2, -Math.sin((18+i*72)*Math.PI/180)*s.size/2);
+    ctx.lineTo(Math.cos((54+i*72)*Math.PI/180)*s.size/4, -Math.sin((54+i*72)*Math.PI/180)*s.size/4);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#fde68a';
+  ctx.shadowColor = '#fde68a';
+  ctx.shadowBlur = 18;
+  ctx.fill();
+  ctx.restore();
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + (b.size||b.w) && a.x + (a.size||a.w) > b.x &&
+         a.y < b.y + (b.size||b.h) && a.y + (a.size||a.h) > b.y;
+}
+
+let bgStars = Array.from({length:70}, () => ({
+  x: Math.random()*W, y: Math.random()*H, r: Math.random()*1.6+0.3, s: Math.random()*0.6+0.2
+}));
+
+function drawBackground() {
+  ctx.fillStyle = '#020208';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#ffffff';
+  for (const b of bgStars) {
+    b.y += b.s;
+    if (b.y > H) b.y = 0;
+    ctx.globalAlpha = 0.5 + Math.sin(b.y*0.05)*0.3;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function gameOver() {
+  running = false;
+  cancelAnimationFrame(animId);
+  overlayTitle.textContent = '💥 انتهت اللعبة!';
+  document.querySelector('#overlay p').textContent = `نقاطك النهائية: ${score} — المستوى الذي وصلت إليه: ${level}`;
+  startBtn.textContent = 'إعادة المحاولة';
+  controlsHint.classList.remove('hidden');
+  overlay.classList.remove('hidden');
+}
+
+function loop() {
+  if (!running) return;
+  drawBackground();
+
+  // ship movement
+  const speed = 6.5;
+  if (keys['ArrowLeft'] || keys['a']) ship.x -= speed;
+  if (keys['ArrowRight'] || keys['d']) ship.x += speed;
+  ship.x = Math.max(0, Math.min(W - ship.w, ship.x));
+
+  // spawn
+  spawnTimer++;
+  const spawnRate = Math.max(18, 42 - level*3);
+  if (spawnTimer > spawnRate) {
+    spawnTimer = 0;
+    spawnEntity();
+  }
+
+  // update meteors
+  for (let i = meteors.length-1; i>=0; i--) {
+    const m = meteors[i];
+    m.y += m.speed;
+    m.rot += m.rotSpeed;
+    drawMeteor(m);
+    if (rectsOverlap(ship, m)) {
+      meteors.splice(i,1);
+      lives--;
+      spawnParticles(m.x+m.size/2, m.y+m.size/2, '168,85,247', 18);
+      updateHUD();
+      if (lives <= 0) { gameOver(); return; }
+      continue;
+    }
+    if (m.y > H) meteors.splice(i,1);
+  }
+
+  // update stars
+  for (let i = stars.length-1; i>=0; i--) {
+    const s = stars[i];
+    s.y += s.speed;
+    s.rot += 0.08;
+    drawStar(s);
+    if (rectsOverlap(ship, s)) {
+      stars.splice(i,1);
+      score += 10;
+      spawnParticles(s.x+s.size/2, s.y+s.size/2, '253,230,138', 14);
+      const newLevel = Math.floor(score/100) + 1;
+      if (newLevel !== level) { level = newLevel; speedMult = 1 + (level-1)*0.18; }
+      updateHUD();
+      continue;
+    }
+    if (s.y > H) stars.splice(i,1);
+  }
+
+  // particles
+  for (let i = particles.length-1; i>=0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life--;
+    ctx.globalAlpha = Math.max(p.life/30, 0);
+    ctx.fillStyle = `rgb(${p.color})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (p.life <= 0) particles.splice(i,1);
+  }
+
+  drawShip();
+  animId = requestAnimationFrame(loop);
+}
+
+function startGame() {
+  resetGame();
+  overlay.classList.add('hidden');
+  running = true;
+  animId = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', startGame);
+
+window.addEventListener('keydown', e => { keys[e.key] = true; });
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// touch controls
+let touchX = null;
+canvas.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const newX = e.touches[0].clientX;
+  const dx = newX - touchX;
+  ship.x += dx;
+  ship.x = Math.max(0, Math.min(W - ship.w, ship.x));
+  touchX = newX;
+}, { passive:false });
+
+// initial draw
+resetGame();
+drawBackground();
+drawShip();
+</script>
+</body>
+</html>
